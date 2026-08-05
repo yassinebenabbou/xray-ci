@@ -1,0 +1,7 @@
+.vscode/
+.specstory/
+
+# xray-scan job outputs
+audit.json
+xray_scan_report.html
+__pycache__/

@@ -1,0 +1,227 @@
+{
+  "multiScanId": "0000aaaa-0000-aaaa-0000-aaaa0000aaaa",
+  "scansStatus": {
+    "scaScanStatusCode": 0,
+    "secretsScanStatusCode": 1
+  },
+  "errors": [
+    {
+      "filePath": "/builds/acme/payments-api",
+      "errorMessage": "secrets scan failed: analyzer manager timed out"
+    }
+  ],
+  "securityViolations": [
+    {
+      "severity": "Critical",
+      "severityNumValue": 13,
+      "impactedPackageName": "org.apache.commons:commons-text",
+      "impactedPackageVersion": "1.9",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.apache.commons:commons-text", "version": "1.9"}
+      ],
+      "impactPaths": [
+        [
+          {"name": "acme:payments-api", "version": "1.4.0"},
+          {"name": "org.apache.commons:commons-text", "version": "1.9"}
+        ]
+      ],
+      "watch": "prod-watch-a",
+      "issueId": "XRAY-100001",
+      "policies": ["block-critical"],
+      "fail_build": true,
+      "summary": "Variable interpolation allows remote code execution.",
+      "applicable": "Applicable",
+      "fixedVersions": ["[1.10.0]"],
+      "cves": [
+        {"id": "CVE-2025-12345", "cvssV3": "9.8", "applicability": {"status": "applicable"}}
+      ]
+    },
+    {
+      "severity": "High",
+      "severityNumValue": 11,
+      "impactedPackageName": "com.fasterxml.jackson.core:jackson-databind",
+      "impactedPackageVersion": "2.13.0",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.springframework.boot:spring-boot-starter-json", "version": "2.7.0"}
+      ],
+      "impactPaths": [
+        [
+          {"name": "acme:payments-api", "version": "1.4.0"},
+          {"name": "org.springframework.boot:spring-boot-starter-json", "version": "2.7.0"},
+          {"name": "com.fasterxml.jackson.core:jackson-databind", "version": "2.13.0"}
+        ]
+      ],
+      "watch": "prod-watch-a",
+      "issueId": "XRAY-100002",
+      "policies": ["block-high"],
+      "fail_build": true,
+      "summary": "Deep wrapper array deserialization causes denial of service.",
+      "applicable": "Applicable",
+      "fixedVersions": ["[2.13.4.1]", "[2.14.0]"],
+      "cves": [
+        {"id": "CVE-2024-22222", "cvssV3": "7.5", "applicability": {"status": "applicable"}}
+      ]
+    },
+    {
+      "severity": "High",
+      "severityNumValue": 11,
+      "impactedPackageName": "org.springframework:spring-web",
+      "impactedPackageVersion": "5.3.20",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.springframework.boot:spring-boot-starter-web", "version": "2.7.0"}
+      ],
+      "watch": "prod-watch-b",
+      "issueId": "XRAY-100003",
+      "policies": ["block-high"],
+      "fail_build": true,
+      "summary": "Two distinct issues reported against the same component.",
+      "applicable": "Applicable",
+      "fixedVersions": ["[5.3.27]"],
+      "cves": [
+        {"id": "CVE-2025-55555", "cvssV3": "7.1"},
+        {"id": "CVE-2024-33333", "cvssV3": "8.2", "applicability": {"status": "applicable"}}
+      ]
+    },
+    {
+      "severity": "Medium",
+      "severityNumValue": 9,
+      "impactedPackageName": "ch.qos.logback:logback-core",
+      "impactedPackageVersion": "1.2.9",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.springframework.boot:spring-boot-starter-logging", "version": "2.7.0"}
+      ],
+      "watch": "prod-watch-a",
+      "issueId": "XRAY-100004",
+      "policies": ["block-medium"],
+      "fail_build": true,
+      "summary": "Configuration parsing permits arbitrary code execution.",
+      "applicable": "Undetermined",
+      "fixedVersions": ["[1.2.13]"],
+      "cves": [
+        {"id": "CVE-2023-99999", "cvssV3": "6.6"}
+      ]
+    },
+    {
+      "severity": "High",
+      "severityNumValue": 11,
+      "impactedPackageName": "org.yaml:snakeyaml",
+      "impactedPackageVersion": "1.30",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.springframework.boot:spring-boot-starter", "version": "2.7.0"}
+      ],
+      "watch": "prod-watch-a",
+      "issueId": "XRAY-100005",
+      "policies": ["block-high"],
+      "fail_build": true,
+      "summary": "Unbounded alias expansion during deserialization.",
+      "applicable": "Not Applicable",
+      "fixedVersions": ["[2.0]"],
+      "cves": [
+        {"id": "CVE-2024-44444", "cvssV3": "7.4",
+         "applicability": {"status": "not_applicable",
+                           "scannerDescription": "The vulnerable Yaml.load entry point is never reached."}}
+      ]
+    },
+    {
+      "severity": "Low",
+      "severityNumValue": 5,
+      "impactedPackageName": "org.eclipse.jetty:jetty-server",
+      "impactedPackageVersion": "9.4.44",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "org.eclipse.jetty:jetty-server", "version": "9.4.44"}
+      ],
+      "watch": "prod-watch-b",
+      "issueId": "XRAY-100006",
+      "policies": ["report-low"],
+      "fail_build": false,
+      "summary": "Error handling discloses the server version.",
+      "applicable": "Applicable",
+      "fixedVersions": ["[9.4.51]"],
+      "cves": [
+        {"id": "CVE-2024-11111", "cvssV3": "3.7", "applicability": {"status": "applicable"}}
+      ]
+    },
+    {
+      "severity": "Medium",
+      "severityNumValue": 9,
+      "impactedPackageName": "commons-io:commons-io",
+      "impactedPackageVersion": "2.6",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "commons-io:commons-io", "version": "2.6"}
+      ],
+      "watch": "prod-watch-a",
+      "issueId": "XRAY-100007",
+      "policies": ["block-medium"],
+      "fail_build": true,
+      "summary": "Issue tracked by Xray id only, with no CVE assigned.",
+      "applicable": "Undetermined",
+      "fixedVersions": ["[2.7]"],
+      "cves": []
+    }
+  ],
+  "licensesViolations": [
+    {
+      "severity": "High",
+      "impactedPackageName": "com.example:gpl-widget",
+      "impactedPackageVersion": "3.1.0",
+      "impactedPackageType": "Maven",
+      "licenseKey": "GPL-3.0",
+      "licenseName": "GNU General Public License v3.0",
+      "components": [
+        {"name": "com.example:gpl-widget", "version": "3.1.0"}
+      ],
+      "watch": "prod-watch-a",
+      "policies": ["no-copyleft"],
+      "fail_build": true
+    }
+  ],
+  "operationalRiskViolations": [
+    {
+      "severity": "Medium",
+      "impactedPackageName": "log4j:log4j",
+      "impactedPackageVersion": "1.2.17",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "log4j:log4j", "version": "1.2.17"}
+      ],
+      "riskReason": "Package reached end of life and is no longer maintained",
+      "isEndOfLife": true,
+      "endOfLifeMessage": "Log4j 1.x reached end of life in August 2015",
+      "latestVersion": "1.2.17",
+      "cadence": 0.0,
+      "watch": "prod-watch-b",
+      "policies": ["no-eol-packages"],
+      "fail_build": true
+    }
+  ],
+  "vulnerabilities": [
+    {
+      "severity": "Low",
+      "severityNumValue": 5,
+      "impactedPackageName": "com.google.guava:guava",
+      "impactedPackageVersion": "30.1-jre",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "com.google.guava:guava", "version": "30.1-jre"}
+      ],
+      "issueId": "XRAY-200001",
+      "summary": "Temporary directory creation uses permissive permissions.",
+      "applicable": "Not Applicable",
+      "fixedVersions": ["[32.0.0]"],
+      "cves": [
+        {"id": "CVE-2023-77777", "cvssV3": "3.3"}
+      ]
+    }
+  ],
+  "licenses": [],
+  "secrets": [],
+  "iac": [],
+  "sast": []
+}

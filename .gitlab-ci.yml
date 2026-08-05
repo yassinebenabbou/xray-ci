@@ -1,0 +1,40 @@
+# Xray security gate.
+#
+# Runner image requirements (no `image:` is pinned here — the runner default is
+# assumed to already provide all of these):
+#   * jf       — JFrog CLI v2
+#   * python3  — 3.8 or newer, stdlib only
+#   * maven + a JDK — required by `jf audit --mvn`
+#
+# JFrog authentication is assumed to be already configured on the runner
+# (server config, or JF_URL / JF_ACCESS_TOKEN in the environment).
+#
+# The pass/fail decision deliberately does NOT come from `jf audit`. A watch
+# either fails the build or it doesn't; it has no notion of a documented,
+# expiring exclusion. So `jf` is asked not to set the exit code (--fail=false)
+# and analyze_audit.py re-adjudicates the results against xray-exclusions.json.
+
+stages:
+  - test
+
+xray-scan:
+  stage: test
+  script:
+    # --fail=false: without it, jf exits 3 as soon as a watch's Fail Build rule
+    # matches, and GitLab's `set -e` would kill the job before the analysis runs.
+    # A real CLI failure (auth, unknown watch) still exits non-zero and still
+    # aborts here — that is an infra failure, not a violation, and should stop.
+    - jf audit --mvn --licenses --extended-table --allow-partial-results --watches "A,B" --exclude-test-deps --fail=false --format=simple-json > audit.json
+    # `|| JF_EXIT_CODE=$?` rather than `; JF_EXIT_CODE=$?`: under `set -e` a bare
+    # `;` aborts the job on a non-zero python exit, so line 3 would never run and
+    # the 1-vs-2 exit code distinction would be lost.
+    - python3 analyze_audit.py || JF_EXIT_CODE=$?
+    # 0 = clean, 1 = un-excluded violations, 2 = scan/config error.
+    - exit ${JF_EXIT_CODE:-0}
+  artifacts:
+    # `always` matters: the report is most needed on the runs that fail.
+    when: always
+    expose_as: "Xray Scan Report"
+    paths:
+      - xray_scan_report.html
+      - audit.json

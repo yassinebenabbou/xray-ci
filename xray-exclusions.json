@@ -1,0 +1,7 @@
+[
+  {
+    "CVE": "CVE-2025-12345",
+    "expirationDate": "2026-11-01",
+    "reason": "no upstream fix"
+  }
+]

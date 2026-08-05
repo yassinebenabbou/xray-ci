@@ -1,0 +1,27 @@
+[
+  {
+    "CVE": "CVE-2025-12345",
+    "expirationDate": "2026-11-01",
+    "reason": "no upstream fix"
+  },
+  {
+    "CVE": "CVE-2024-11111",
+    "expirationDate": "2026-08-20",
+    "reason": "vendor patch in progress, tracked in SEC-4412"
+  },
+  {
+    "CVE": "CVE-2023-99999",
+    "expirationDate": "2026-01-15",
+    "reason": "waiting on the Spring Boot 3 upgrade"
+  },
+  {
+    "CVE": "CVE-2025-55555",
+    "expirationDate": "2026-12-31",
+    "reason": "accepted risk, endpoint is not exposed"
+  },
+  {
+    "CVE": "CVE-2020-00000",
+    "expirationDate": "2027-01-01",
+    "reason": "dependency was removed in 2.4.0"
+  }
+]
