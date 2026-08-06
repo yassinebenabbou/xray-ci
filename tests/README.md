@@ -18,7 +18,7 @@ python3 analyze_audit.py; echo "exit=$?"
 open xray_scan_report.html
 ```
 
-Expected: **exit 1**, verdict `XRAY SCAN: FAIL`, 6 blocking / 2 excluded /
+Expected: **exit 1**, verdict `XRAY SCAN: FAIL`, 6 blocking / 3 excluded /
 1 not applicable.
 
 Both env vars are optional overrides. With neither set the script reads
@@ -36,12 +36,44 @@ in CI. `REPORT_HTML` moves the report somewhere other than
 | `ch.qos.logback:logback-core` | exclusion that expired on 2026-01-15 | blocking, flagged `EXPIRED` |
 | `org.yaml:snakeyaml` | JAS `not_applicable` | auto-suppressed, no exclusion needed |
 | `org.eclipse.jetty:jetty-server` | exclusion expiring inside 30 days | excluded, flagged amber |
-| `commons-io:commons-io` | violation with no CVE id, only `XRAY-100007` | blocking — nothing to key an exclusion off |
+| `commons-io:commons-io` | `cves: []`, identified only by `XRAY-100007` | blocking — no exclusion entry for that issue id |
+| `io.netty:netty-handler` | `cves: null`, excluded by issue id `XRAY-100008` | excluded — the issueId fallback |
 | `com.example:gpl-widget` | license violation | blocking, no exclusion path |
 | `log4j:log4j` | operational-risk / EOL violation | blocking, no exclusion path |
 | `com.google.guava:guava` | `vulnerabilities[]`, outside the watches | informational only |
 | `CVE-2020-00000` in the exclusions file | matches nothing in the scan | listed as stale, does not fail |
 | `secretsScanStatusCode: 1` + `errors[]` | a non-SCA scanner failed | warning banner, verdict unchanged |
+
+## Exclusions keyed on an Xray issue id
+
+When Xray flags something before a CVE is published, `cves` comes back `null`
+(or `[]`) and `issueId` is the only identifier. The exclusions file handles that
+with no schema change — put the issue id in the `CVE` field:
+
+```json
+{"CVE": "XRAY-100008", "expirationDate": "2026-10-15", "reason": "no CVE published yet"}
+```
+
+CVEs take priority: the issue id is used only when the row has no CVE at all.
+Matching is case-insensitive, and the expiry rules are identical.
+
+**When the CVE is eventually published**, Xray reports it instead of the bare
+issue id, the `XRAY-*` entry stops matching, and the row blocks again. That is
+intended. To see it happen, assign a CVE to the netty row:
+
+```sh
+python3 -c "
+import json; d=json.load(open('tests/sample-audit.json'))
+[r.update(cves=[{'id':'CVE-2026-70001','cvssV3':'8.1'}])
+ for r in d['securityViolations'] if r.get('issueId')=='XRAY-100008']
+json.dump(d, open('/tmp/cve-published.json','w'))"
+
+AUDIT_JSON=/tmp/cve-published.json XRAY_EXCLUSIONS=tests/sample-exclusions.json \
+python3 analyze_audit.py; echo "exit=$?"
+```
+
+Blocking goes 4 → 5, and `XRAY-100008` shows up under **Exclusion hygiene** as
+having matched nothing — the cue to re-file it under the new CVE id.
 
 ## Exit-code matrix
 

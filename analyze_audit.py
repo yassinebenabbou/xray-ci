@@ -6,6 +6,9 @@ exclusions file, then emit an HTML report, a job-log summary, and an exit code.
 2026-11-01" — a watch either fails the build or it doesn't. So the CI job asks
 jf not to set the exit code (`--fail=false`) and this script decides instead.
 
+Exclusions are keyed on the CVE id, or on the Xray issue id (XRAY-123456) for
+findings that have no published CVE yet. See issue_identifiers().
+
 Exit codes
     0   no blocking findings
     1   one or more blocking findings
@@ -153,6 +156,32 @@ def cve_entries(row):
         if isinstance(cve, dict) and str(cve.get("id") or "").strip():
             out.append(cve)
     return out
+
+
+def issue_identifiers(row):
+    """The ids an exclusion may be keyed on for this row, worst case empty.
+
+    Xray flags plenty of issues before a CVE is published: `cves` comes back
+    null or empty and only `issueId` (XRAY-123456) names the finding. Fall back
+    to that id so those rows can still be excluded, through the same `CVE`
+    field in the exclusions file — no schema change.
+
+    Returns (entry, is_fallback) pairs. A fallback entry is a synthetic stand-in
+    carrying only an id, so it has no CVSS and no per-CVE applicability; the
+    row-level `applicable` field is what cve_applicability() falls back to.
+
+    Deliberate consequence: once a CVE is published, Xray reports the CVE and
+    the XRAY-* exclusion stops matching, so the pipeline fails until someone
+    re-files it under the new id. The exclusion hygiene section flags the
+    orphaned entry as having matched nothing, which is the cue to do that.
+    """
+    entries = cve_entries(row)
+    if entries:
+        return [(entry, False) for entry in entries]
+    issue_id = str(row.get("issueId") or "").strip()
+    if issue_id:
+        return [({"id": issue_id}, True)]
+    return []
 
 
 def cve_applicability(cve, row):
@@ -353,9 +382,12 @@ def scan_status_report(audit):
 def adjudicate_security(rows, exclusions, today, seen_cves):
     """Classify each security violation row.
 
-    A row is suppressed only if it carries at least one CVE and *every* CVE on
-    it is either excluded (valid, unexpired) or proven Not Applicable. One
-    unexcluded CVE keeps the whole row blocking, and we record which one.
+    A row is suppressed only if it carries at least one identifier and *every*
+    one of them is either excluded (valid, unexpired) or proven Not Applicable.
+    One unexcluded identifier keeps the whole row blocking, and we record which.
+
+    "Identifier" is the row's CVEs when it has any, otherwise its Xray issueId —
+    see issue_identifiers().
     """
     findings = []
     for row in rows:
@@ -363,10 +395,10 @@ def adjudicate_security(rows, exclusions, today, seen_cves):
             continue
 
         cves = []
-        for cve in cve_entries(row):
-            cve_id = str(cve["id"]).strip().upper()
+        for entry, is_fallback in issue_identifiers(row):
+            cve_id = str(entry["id"]).strip().upper()
             seen_cves.add(cve_id)
-            applicability = cve_applicability(cve, row)
+            applicability = cve_applicability(entry, row)
             exclusion = exclusions.get(cve_id)
 
             if exclusion is not None:
@@ -381,15 +413,16 @@ def adjudicate_security(rows, exclusions, today, seen_cves):
                 "status": status,
                 "exclusion": exclusion,
                 "applicability": applicability,
-                "cvss": cvss_of(cve),
+                "cvss": cvss_of(entry),
+                "fallback": is_fallback,
             })
 
         if cves:
             suppressed = all(c["status"] in (EXCLUDED, NOT_APPLICABLE) for c in cves)
             uses_exclusion = any(c["status"] == EXCLUDED for c in cves)
         else:
-            # No CVE to key an exclusion off (issue-ID-only row); the row-level
-            # applicability field is the only thing left to go on.
+            # Neither a CVE nor an issueId — nothing an exclusion could key on,
+            # so the row-level applicability field is all there is to go on.
             suppressed = alnum(row.get("applicable")) == "notapplicable"
             uses_exclusion = False
 
@@ -468,8 +501,8 @@ def collect_informational(rows, seen_cves):
         if not isinstance(row, dict):
             continue
         ids = []
-        for cve in cve_entries(row):
-            cve_id = str(cve["id"]).strip().upper()
+        for entry, _ in issue_identifiers(row):
+            cve_id = str(entry["id"]).strip().upper()
             ids.append(cve_id)
             seen_cves.add(cve_id)
         findings.append({
@@ -663,6 +696,8 @@ def cve_cell(cve):
     bits = ['<span class="mono id">%s</span>' % esc(cve["id"])]
     if cve["cvss"]:
         bits.append('<span class="dim id"> · CVSS %s</span>' % esc(cve["cvss"]))
+    if cve.get("fallback"):
+        bits.append('<br><span class="dim">Xray issue id — no CVE published yet</span>')
     return "".join(bits)
 
 
@@ -726,7 +761,8 @@ def security_rows(findings, today):
             applicability = joined(unique(applicability_label(c["applicability"])
                                           for c in finding["cves"]))
         else:
-            cves_html = '<span class="dim id">%s</span>' % esc(finding["issue_id"] or "no CVE")
+            # Neither a CVE nor an issueId — no exclusion could ever match.
+            cves_html = '<span class="dim">no identifier</span>'
             status_html = badge(finding["status"].lower().replace("_", " "),
                                 "st-na" if finding["status"] == NOT_APPLICABLE else "st-blocking")
             applicability = joined([applicability_label(finding.get("applicable"))])
@@ -773,8 +809,9 @@ def render_html(ctx):
     parts.append(section(
         "Blocking violations", len(ctx["blocking"]),
         table(SECURITY_HEADERS, security_rows(ctx["blocking"], today)),
-        note="These fail the pipeline. Fix them, or add an entry to "
-             "%s with an expiry date and a reason." % EXCLUSIONS_FILENAME,
+        note="These fail the pipeline. Fix them, or add an entry to %s with an "
+             "expiry date and a reason, keyed on the CVE id — or on the Xray "
+             "issue id where no CVE has been published yet." % EXCLUSIONS_FILENAME,
     ))
 
     parts.append(section(
@@ -955,9 +992,11 @@ def describe_security(finding, today):
                 detail = "not applicable"
             else:
                 detail = "blocking"
+            if cve.get("fallback"):
+                detail += " [Xray issue id — no CVE published yet]"
             bits.append("      %-18s %s" % (cve["id"], detail))
-    elif finding["issue_id"]:
-        bits.append("      %-18s no CVE id on this row" % finding["issue_id"])
+    else:
+        bits.append("      no CVE and no issue id — cannot be excluded")
     if finding["fixed"]:
         bits.append("      fixed in: %s" % ", ".join(finding["fixed"]))
     if finding["direct"]:

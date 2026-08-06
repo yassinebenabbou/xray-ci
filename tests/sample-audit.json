@@ -164,6 +164,24 @@
       "applicable": "Undetermined",
       "fixedVersions": ["[2.7]"],
       "cves": []
+    },
+    {
+      "severity": "High",
+      "severityNumValue": 11,
+      "impactedPackageName": "io.netty:netty-handler",
+      "impactedPackageVersion": "4.1.68.Final",
+      "impactedPackageType": "Maven",
+      "components": [
+        {"name": "io.netty:netty-all", "version": "4.1.68.Final"}
+      ],
+      "watch": "prod-watch-b",
+      "issueId": "XRAY-100008",
+      "policies": ["block-high"],
+      "fail_build": true,
+      "summary": "Disclosed by JFrog research before a CVE was assigned.",
+      "applicable": "Applicable",
+      "fixedVersions": ["[4.1.94.Final]"],
+      "cves": null
     }
   ],
   "licensesViolations": [
