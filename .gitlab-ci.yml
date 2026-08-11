@@ -29,7 +29,8 @@ xray-scan:
     # `;` aborts the job on a non-zero python exit, so line 3 would never run and
     # the 1-vs-2 exit code distinction would be lost.
     - python3 analyze_audit.py || JF_EXIT_CODE=$?
-    # 0 = clean, 1 = un-excluded violations, 2 = scan/config error.
+    # 0 = clean, 1 = un-excluded violations, 2 = scan/config error,
+    # 3 = exclusions that matched nothing and must be deleted.
     - exit ${JF_EXIT_CODE:-0}
   artifacts:
     # `always` matters: the report is most needed on the runs that fail.

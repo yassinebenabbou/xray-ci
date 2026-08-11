@@ -14,6 +14,12 @@ Exit codes
     1   one or more blocking findings
     2   scan or configuration error — audit.json missing/unparseable, the
         exclusions file is invalid, or the SCA scan itself failed
+    3   every violation is accounted for, but the exclusions file carries
+        entries that matched nothing in this scan and must be removed
+
+Precedence when several apply: 2 beats 1 beats 3. An unusable scan outranks a
+security failure, which outranks a housekeeping failure — but the report and
+the log always name every reason, not just the one that set the exit code.
 
 Environment overrides (all optional)
     AUDIT_JSON       path to the audit output      (default: audit.json)
@@ -39,6 +45,7 @@ EXPIRY_WARNING_DAYS = 30
 EXIT_CLEAN = 0
 EXIT_BLOCKED = 1
 EXIT_ERROR = 2
+EXIT_UNUSED_EXCLUSIONS = 3
 
 # Worst first. Anything unrecognised sorts last, under "Unknown".
 SEVERITIES = ("Critical", "High", "Medium", "Low", "Unknown")
@@ -520,15 +527,24 @@ def collect_informational(rows, seen_cves):
 
 
 def exclusion_audit(exclusions, seen_cves, today):
-    """Classify every exclusion by how it fared this run."""
+    """Classify every exclusion by how it fared this run.
+
+    "Matched nothing" is the primary axis and outranks expiry: an entry nobody
+    references is dead weight whether or not its date has passed, and it is what
+    fails the run under EXIT_UNUSED_EXCLUSIONS.
+
+    So `expired` and `expiring` only ever hold entries that DID match something.
+    An expired-but-matched entry is already forcing its violation to block,
+    which is a different problem from an entry nothing refers to.
+    """
     stale, expiring, expired = [], [], []
     for exclusion in exclusions.values():
         remaining = days_left(exclusion, today)
         record = dict(exclusion, days_left=remaining, matched=exclusion["cve"] in seen_cves)
-        if remaining < 0:
-            expired.append(record)
-        elif not record["matched"]:
+        if not record["matched"]:
             stale.append(record)
+        elif remaining < 0:
+            expired.append(record)
         elif remaining <= EXPIRY_WARNING_DAYS:
             expiring.append(record)
     stale.sort(key=lambda e: e["cve"])
@@ -814,6 +830,25 @@ def render_html(ctx):
              "issue id where no CVE has been published yet." % EXCLUSIONS_FILENAME,
     ))
 
+    # Directly after the blocking violations: these two sections are the only
+    # things that fail the job, so they belong together at the top. Everything
+    # below them is context for reading them.
+    stale_rows = [[
+        '<span class="mono id">%s</span>' % esc(record["cve"]),
+        esc(record["expires_text"]),
+        badge("matched nothing", "st-blocking"),
+        esc(record["reason"]),
+    ] for record in ctx["stale_exclusions"]]
+    parts.append(section(
+        "Unused exclusions — remove them", len(stale_rows),
+        table(("CVE / issue id", "Expires", "State", "Reason"), stale_rows),
+        note="Nothing in this scan matches these entries. Either the finding was "
+             "remediated, the id is mistyped, or a CVE has since been published "
+             "for what was filed under an Xray issue id. Delete them from %s. "
+             "This fails the job with exit code %d."
+             % (EXCLUSIONS_FILENAME, EXIT_UNUSED_EXCLUSIONS),
+    ))
+
     parts.append(section(
         "Excluded security violations", len(ctx["excluded"]),
         table(SECURITY_HEADERS, security_rows(ctx["excluded"], today)),
@@ -862,34 +897,27 @@ def render_html(ctx):
              "one of these blocks the pipeline.",
     ))
 
-    audit_rows = []
+    expiry_rows = []
     for record in ctx["expired_exclusions"]:
-        audit_rows.append([
-            '<span class="mono">%s</span>' % esc(record["cve"]),
+        expiry_rows.append([
+            '<span class="mono id">%s</span>' % esc(record["cve"]),
             esc(record["expires_text"]),
             badge("expired %d day(s) ago" % -record["days_left"], "st-expired"),
             esc(record["reason"]),
         ])
     for record in ctx["expiring_exclusions"]:
-        audit_rows.append([
-            '<span class="mono">%s</span>' % esc(record["cve"]),
+        expiry_rows.append([
+            '<span class="mono id">%s</span>' % esc(record["cve"]),
             esc(record["expires_text"]),
             badge("expires in %d day(s)" % record["days_left"], "st-warn"),
             esc(record["reason"]),
         ])
-    for record in ctx["stale_exclusions"]:
-        audit_rows.append([
-            '<span class="mono">%s</span>' % esc(record["cve"]),
-            esc(record["expires_text"]),
-            badge("matched nothing in this scan", "st-na"),
-            esc(record["reason"]),
-        ])
     parts.append(section(
-        "Exclusion hygiene", len(audit_rows),
-        table(("CVE", "Expires", "State", "Reason"), audit_rows),
-        note="Expired entries no longer suppress anything. Entries that matched "
-             "nothing are either already remediated or a mistyped CVE id. None "
-             "of this fails the pipeline on its own.",
+        "Exclusion expiry", len(expiry_rows),
+        table(("CVE / issue id", "Expires", "State", "Reason"), expiry_rows),
+        note="These still match a finding. An expired one no longer suppresses "
+             "it, so its violation is in the blocking list above; renew or "
+             "remediate before the others follow.",
     ))
 
     info_rows = [[
@@ -1020,6 +1048,19 @@ def print_summary(ctx):
                 "Blocking violations (%d)" % ctx["blocking_total"],
                 lines, collapsed=False)
 
+    # Expanded, not collapsed, and directly under the blocking violations: these
+    # fail the job, so they must be visible without anyone clicking a section.
+    stale_lines = ["  %-18s expires %s — %s"
+                   % (record["cve"], record["expires_text"], record["reason"])
+                   for record in ctx["stale_exclusions"]]
+    if stale_lines:
+        stale_lines.append("")
+        stale_lines.append("  Nothing in this scan matches the entries above. "
+                           "Remove them from %s." % EXCLUSIONS_FILENAME)
+    log_section("xray_unused_exclusions",
+                "Unused exclusions — remove them (%d)" % len(ctx["stale_exclusions"]),
+                stale_lines, collapsed=False)
+
     excluded_lines = []
     for finding in ctx["excluded"]:
         excluded_lines.extend(describe_security(finding, today))
@@ -1032,20 +1073,16 @@ def print_summary(ctx):
     log_section("xray_not_applicable",
                 "Auto-suppressed — not applicable (%d)" % len(ctx["not_applicable"]), na_lines)
 
-    hygiene = []
+    expiry = []
     for record in ctx["expired_exclusions"]:
-        hygiene.append("  EXPIRED  %-18s on %s, %d day(s) ago — %s"
-                       % (record["cve"], record["expires_text"], -record["days_left"],
-                          record["reason"]))
+        expiry.append("  EXPIRED  %-18s on %s, %d day(s) ago — %s"
+                      % (record["cve"], record["expires_text"], -record["days_left"],
+                         record["reason"]))
     for record in ctx["expiring_exclusions"]:
-        hygiene.append("  EXPIRING %-18s on %s, in %d day(s) — %s"
-                       % (record["cve"], record["expires_text"], record["days_left"],
-                          record["reason"]))
-    for record in ctx["stale_exclusions"]:
-        hygiene.append("  STALE    %-18s matched nothing in this scan — %s"
-                       % (record["cve"], record["reason"]))
-    log_section("xray_exclusion_hygiene",
-                "Exclusion hygiene (%d)" % len(hygiene), hygiene)
+        expiry.append("  EXPIRING %-18s on %s, in %d day(s) — %s"
+                      % (record["cve"], record["expires_text"], record["days_left"],
+                         record["reason"]))
+    log_section("xray_exclusion_expiry", "Exclusion expiry (%d)" % len(expiry), expiry)
 
     info_lines = ["  [%s] %s — %s" % (f["severity"], f["package"],
                                       ", ".join(f["cve_ids"]) or f["issue_id"] or "no id")
@@ -1068,6 +1105,7 @@ def print_summary(ctx):
           % (len(ctx["blocking"]), len(ctx["excluded"]), len(ctx["not_applicable"])))
     print("  License violations  : %d blocking" % len(ctx["licenses"]))
     print("  Operational risk    : %d blocking" % len(ctx["oprisk"]))
+    print("  Unused exclusions   : %d" % len(ctx["stale_exclusions"]))
     print("  Informational       : %d" % len(ctx["informational"]))
     blocking_all = ctx["blocking"] + ctx["licenses"] + ctx["oprisk"]
     if blocking_all:
@@ -1149,12 +1187,23 @@ def main():
         })
 
     blocking_total = len(blocking) + len(licenses) + len(oprisk)
+
+    # Both failure modes are named in the verdict even though only one of them
+    # sets the exit code — fixing the violations should not surprise anyone with
+    # a second red pipeline they were never told about.
+    reasons = []
     if blocking_total:
+        reasons.append("%d violation(s) are not covered by a valid exclusion"
+                       % blocking_total)
+    if stale:
+        reasons.append("%d exclusion(s) in %s matched nothing in this scan and "
+                       "must be removed" % (len(stale), EXCLUSIONS_FILENAME))
+
+    if reasons:
         verdict = {
             "css": "fail",
             "headline": "XRAY SCAN: FAIL",
-            "detail": "%d violation(s) are not covered by a valid exclusion."
-                      % blocking_total,
+            "detail": "%s." % "; ".join(reasons),
         }
     else:
         verdict = {
@@ -1174,6 +1223,7 @@ def main():
         "banners": banners,
         "tiles": [
             ("blocking", blocking_total),
+            ("unused exclusions", len(stale)),
             ("excluded", len(excluded)),
             ("not applicable", len(not_applicable)),
             ("licenses", len(licenses)),
@@ -1195,7 +1245,12 @@ def main():
 
     write_html(report_path, render_html(ctx))
     print_summary(ctx)
-    return EXIT_BLOCKED if blocking_total else EXIT_CLEAN
+
+    if blocking_total:
+        return EXIT_BLOCKED
+    if stale:
+        return EXIT_UNUSED_EXCLUSIONS
+    return EXIT_CLEAN
 
 
 if __name__ == "__main__":
